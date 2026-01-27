@@ -11,13 +11,31 @@ serve(async (req) => {
   }
 
   try {
-    const { resumeText } = await req.json();
+    const { resumeText, fileName, fileType, fileSize } = await req.json();
     
     if (!resumeText || typeof resumeText !== "string") {
       return new Response(
         JSON.stringify({ error: "Resume text is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Trigger n8n webhook (server-to-server, no CORS issues)
+    try {
+      await fetch("https://hmitra.app.n8n.cloud/webhook-test/resume-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeText,
+          fileName: fileName || "unknown",
+          fileType: fileType || "unknown",
+          fileSize: fileSize || 0,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      console.log("n8n webhook triggered successfully");
+    } catch (webhookError) {
+      console.error("n8n webhook error (continuing anyway):", webhookError);
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
