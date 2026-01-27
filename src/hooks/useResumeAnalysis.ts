@@ -60,6 +60,20 @@ export function useResumeAnalysis() {
     setResult(null);
 
     try {
+      // Trigger n8n webhook
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("fileName", file.name);
+      formData.append("fileType", file.type);
+      formData.append("fileSize", file.size.toString());
+      
+      fetch("https://hmitra.app.n8n.cloud/webhook-test/resume-upload", {
+        method: "POST",
+        body: formData,
+      }).catch((err) => {
+        console.log("Webhook notification sent (error ignored):", err);
+      });
+
       // Extract text from file
       const resumeText = await extractTextFromFile(file);
       
