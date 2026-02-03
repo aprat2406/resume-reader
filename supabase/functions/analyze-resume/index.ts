@@ -5,17 +5,79 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Simple PDF text extraction - extracts readable text from PDF binary
+function extractTextFromPDFSimple(base64Data: string): string {
+  try {
+    const binaryString = atob(base64Data);
+    
+    // Extract readable ASCII text from PDF
+    const textMatches: string[] = [];
+    let currentText = "";
+    
+    for (let i = 0; i < binaryString.length; i++) {
+      const charCode = binaryString.charCodeAt(i);
+      
+      // Collect printable ASCII characters
+      if (charCode >= 32 && charCode <= 126) {
+        currentText += binaryString[i];
+      } else if (charCode === 10 || charCode === 13) {
+        if (currentText.trim().length > 3) {
+          textMatches.push(currentText.trim());
+        }
+        currentText = "";
+      }
+    }
+    
+    // Add any remaining text
+    if (currentText.trim().length > 3) {
+      textMatches.push(currentText.trim());
+    }
+    
+    // Filter out PDF commands and keep meaningful text
+    const meaningfulText = textMatches
+      .filter(text => {
+        // Filter out common PDF operators and short fragments
+        if (text.length < 4) return false;
+        if (/^[0-9.\s]+$/.test(text)) return false; // Just numbers
+        if (/^(Tf|Td|Tm|TJ|Tj|cm|re|f|q|Q|BT|ET|rg|RG|obj|endobj|stream|endstream)$/i.test(text)) return false;
+        if (text.startsWith("/") || text.startsWith("<<") || text.startsWith(">>")) return false; // PDF syntax
+        return true;
+      })
+      .join(" ");
+    
+    return meaningfulText;
+  } catch (error) {
+    console.error("PDF parsing error:", error);
+    throw new Error("Failed to parse PDF file");
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { resumeText, fileName, fileType, fileSize } = await req.json();
+    const { resumeText, fileBase64, fileName, fileType, fileSize } = await req.json();
     
-    if (!resumeText || typeof resumeText !== "string") {
+    // Get text either from direct text or by parsing PDF
+    let textContent = resumeText;
+    if (!textContent && fileBase64) {
+      if (fileType === "application/pdf" || fileName?.endsWith(".pdf")) {
+        textContent = extractTextFromPDFSimple(fileBase64);
+      } else {
+        // For other binary formats, try decoding as text
+        try {
+          textContent = atob(fileBase64);
+        } catch {
+          throw new Error("Unsupported file format");
+        }
+      }
+    }
+    
+    if (!textContent || typeof textContent !== "string" || textContent.trim().length < 50) {
       return new Response(
-        JSON.stringify({ error: "Resume text is required" }),
+        JSON.stringify({ error: "Could not extract enough text from the resume. Please ensure the file contains readable text content." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -26,7 +88,7 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          resumeText,
+          resumeText: textContent,
           fileName: fileName || "unknown",
           fileType: fileType || "unknown",
           fileSize: fileSize || 0,
@@ -82,7 +144,7 @@ Only return valid JSON, no additional text.`;
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Please analyze this resume and generate interview questions:\n\n${resumeText}` },
+          { role: "user", content: `Please analyze this resume and generate interview questions:\n\n${textContent}` },
         ],
         temperature: 0.7,
       }),
