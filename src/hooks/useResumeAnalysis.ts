@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js`;
 
 interface Question {
   question: string;
@@ -13,39 +17,37 @@ interface AnalysisResult {
   questions: Question[];
 }
 
-// Simple text extraction from common file types
+// Extract text from PDF using pdf.js
+async function extractTextFromPDF(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item: any) => item.str)
+      .join(" ");
+    fullText += pageText + "\n";
+  }
+  
+  return fullText;
+}
+
+// Extract text from common file types
 async function extractTextFromFile(file: File): Promise<string> {
+  // For PDF files, use pdf.js
+  if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+    return extractTextFromPDF(file);
+  }
+  
+  // For text-based files, read as text
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      
-      // For text-based files, return content directly
-      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-        resolve(content);
-        return;
-      }
-      
-      // For PDF files, extract readable text (basic extraction)
-      if (file.type === "application/pdf") {
-        // PDF parsing is complex - we'll send the raw content and let the AI handle it
-        // In production, you'd use a proper PDF parser
-        resolve(content);
-        return;
-      }
-      
-      // For DOC/DOCX, we'll also pass the content
-      resolve(content);
-    };
-    
+    reader.onload = (e) => resolve(e.target?.result as string);
     reader.onerror = () => reject(new Error("Failed to read file"));
-    
-    if (file.type === "application/pdf") {
-      reader.readAsText(file);
-    } else {
-      reader.readAsText(file);
-    }
+    reader.readAsText(file);
   });
 }
 
