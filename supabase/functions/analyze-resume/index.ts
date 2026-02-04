@@ -84,7 +84,7 @@ serve(async (req) => {
 
     // Trigger n8n webhook (server-to-server, no CORS issues)
     try {
-      await fetch("https://hmitra.app.n8n.cloud/webhook-test/resume-upload", {
+      await fetch("https://hmitra.app.n8n.cloud/webhook/resume-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
